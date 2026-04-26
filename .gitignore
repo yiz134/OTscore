@@ -1,0 +1,38 @@
+.vscode/
+.idea/
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.ipynb_checkpoints/
+
+.DS_Store
+Thumbs.db
+
+.env
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+
+# Model checkpoints / outputs
+output/
+ckpt/
+*.pt
+*.pth
+*.onnx
+
+# Figures and generated assets
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
