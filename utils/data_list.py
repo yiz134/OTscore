@@ -1,11 +1,6 @@
-import torch
 import numpy as np
-import random
 from PIL import Image
 from torch.utils.data import Dataset
-import os
-import os.path
-import torchvision
 
 def make_dataset(image_list, labels):
     if labels:
@@ -33,8 +28,7 @@ class ImageList(Dataset):
     def __init__(self, image_list, labels=None, transform=None, target_transform=None, mode='RGB',datadir=None):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+            raise RuntimeError("Found 0 valid samples in image list.")
 
         self.imgs = imgs
         self.transform = transform
@@ -65,8 +59,7 @@ class ImageList_idx(Dataset):
     def __init__(self, image_list, labels=None, transform=None, target_transform=None, mode='RGB',datadir=None):
         imgs = make_dataset(image_list, labels)
         if len(imgs) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
+            raise RuntimeError("Found 0 valid samples in image list.")
 
         self.imgs = imgs
         self.transform = transform

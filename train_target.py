@@ -15,7 +15,7 @@ from sklearn.metrics import confusion_matrix
 import time
 import math
 from utils.ot_score_utils import *
-from utils.utils import *
+
 
 def op_copy(optimizer):
     for param_group in optimizer.param_groups:
@@ -31,24 +31,12 @@ def lr_scheduler(args, optimizer, iter_num, max_iter):
         param_group['nesterov'] = True
     return optimizer
 
-class RandomApply(nn.Module):
-    def __init__(self, fn, p):
-        super().__init__()
-        self.fn = fn
-        self.p = p
-    def forward(self, x):
-        if random.random() > self.p:
-            return x
-        return self.fn(x)
-
 def image_train(resize_size=256, crop_size=224):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     return  transforms.Compose([
         transforms.Resize((resize_size, resize_size)),
-        # transforms.RandomCrop(crop_size),
-        # transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         normalize
     ])
@@ -63,8 +51,7 @@ def image_test(resize_size=256, crop_size=224):
         normalize
     ])
     
-def data_load(args): 
-    ## prepare data
+def data_load(args):
     dsets = {}
     dset_loaders = {}
     train_bs = args.batch_size
@@ -119,7 +106,7 @@ def evaluation(loader, netF, netB, netC, args, cnt, ot_scorer=None):
         inputs = data[0]
         labels = data[1].cuda()
         idx = data[2]
-        inputs = inputs.cuda() #size 192, 3, 224, 224
+        inputs = inputs.cuda()
         feas = netB(netF(inputs))
         outputs = netC(feas)
         if start_test:
@@ -150,12 +137,6 @@ def evaluation(loader, netF, netB, netC, args, cnt, ot_scorer=None):
 
     all_fea = all_fea.float()
     aff = all_output.float()
-    initc = torch.matmul(aff.t(), (all_fea))
-    initc = initc / (1e-8 + aff.sum(dim=0)[:,None])
-
-    
-    ############################## Gaussian Mixture Modeling #############################
-
     uniform = torch.ones(len(all_fea),args.class_num)/args.class_num
     uniform = uniform.cuda()
 
@@ -166,13 +147,11 @@ def evaluation(loader, netF, netB, netC, args, cnt, ot_scorer=None):
     zz, gamma = gmm((all_fea), pi, mu, uniform)
     pred_label = gamma.argmax(dim=1)
     
-    for round in range(1):
-        pi = gamma.sum(dim=0)
-        mu = torch.matmul(gamma.t(), (all_fea))
-        mu = mu / pi.unsqueeze(dim=-1).expand_as(mu)
-
-        zz, gamma = gmm((all_fea), pi, mu, gamma)
-        pred_label = gamma.argmax(axis=1)
+    pi = gamma.sum(dim=0)
+    mu = torch.matmul(gamma.t(), (all_fea))
+    mu = mu / pi.unsqueeze(dim=-1).expand_as(mu)
+    zz, gamma = gmm((all_fea), pi, mu, gamma)
+    pred_label = gamma.argmax(axis=1)
             
     aff = gamma
     
@@ -185,8 +164,6 @@ def evaluation(loader, netF, netB, netC, args, cnt, ot_scorer=None):
     args.out_file.flush()
     print(log_str)
     
-    ############################## Computing JMDS score #############################
-
     sort_zz = zz.sort(dim=1, descending=True)[0]
     zz_sub = sort_zz[:,0] - sort_zz[:,1]
     
@@ -205,7 +182,6 @@ def evaluation(loader, netF, netB, netC, args, cnt, ot_scorer=None):
     ot_score = (ot_score - ot_min) / (ot_max - ot_min)
     sample_weight = 2 * ot_score * JMDS
 
-
     if args.dset=='VISDA-C':
         return aff, sample_weight, aacc/100
     return aff, sample_weight, accuracy
@@ -217,7 +193,6 @@ def KLLoss(input_, target_, coeff, args):
     return kl_loss.mean(dim=0)
 
 def mixup(x, c_batch, t_batch, netF, netB, netC, args):
-    # weight mixup
     lam = (torch.from_numpy(np.random.beta(0.2, 0.2, [len(x)]))).float().cuda()
     t_batch = torch.eye(args.class_num).cuda()[t_batch.argmax(dim=1)]
     shuffle_idx = torch.randperm(len(x))
@@ -229,7 +204,6 @@ def mixup(x, c_batch, t_batch, netF, netB, netC, args):
     return KLLoss(mixed_outputs, mixed_t, mixed_c, args)
 
 def train_target(args):
-    ## set base network
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net).cuda()
     elif args.net[0:3] == 'vgg':
@@ -238,7 +212,6 @@ def train_target(args):
     netB = network.feat_bottleneck(type="bn", feature_dim=netF.in_features, bottleneck_dim=256).cuda()
     netC = network.feat_classifier(type="wn", class_num = args.class_num, bottleneck_dim=256).cuda()
     
-    ####################################################################
     modelpath = args.output_dir_src + '/source_F_{}.pt'.format(args.seed)
     print('modelpath: {}'.format(modelpath))
     netF.load_state_dict(torch.load(modelpath))
@@ -259,7 +232,6 @@ def train_target(args):
     
     crop_size = 224
     augment1 = transforms.Compose([
-        # transforms.Resize((resize_size, resize_size)),
         transforms.RandomCrop(crop_size),
         transforms.RandomHorizontalFlip(),
     ])
@@ -278,12 +250,10 @@ def train_target(args):
     netC.eval()
     args.current_epoch = 0
     with torch.no_grad():
-        #init otscorer
         src_mean_features, src_labels = compute_cls_mean_features_BFC(netB, netF, netC, dset_loaders["source"], ratio=1.0)
         tar_features, tar_pseudo_labels = extract_features_BFC(netB, netF, netC, dset_loaders["test"])
         args.otscorer = OT_SCORE(src_mean_features, src_labels, tar_features, tar_pseudo_labels)
         args.otscorer.compute_semi_discrete_OT()
-        # Compute JMDS score at offline & evaluation.
         soft_pseudo_label, coeff, accuracy = evaluation(
             dset_loaders["test"], netF, netB, netC, args, cnt
         )
@@ -325,7 +295,6 @@ def train_target(args):
         
         target_mixup_kl_loss = mixup(images1, coeff[tar_idx], pred, netF, netB, netC, args)
         
-        # For warm up the start.
         if iter_num < 0.0 * interval_iter + 1:
             target_mixup_kl_loss *= 1e-6
             
@@ -346,7 +315,6 @@ def train_target(args):
             
             cnt += 1
             with torch.no_grad():
-                # Compute JMDS score at offline & evaluation.
                 soft_pseudo_label, coeff, accuracy = evaluation(dset_loaders["test"], netF, netB, netC, args, cnt)
                 epochs.append(cnt)
                 accuracies.append(np.round(accuracy*100, 2))
@@ -356,7 +324,6 @@ def train_target(args):
             netB.train()
             netC.train()
 
-    ####################################################################
     torch.save(netF.state_dict(), osp.join(args.output_dir, f'target_F_{args.seed}.pt'))
     torch.save(netB.state_dict(), osp.join(args.output_dir, f'target_B_{args.seed}.pt'))
     torch.save(netC.state_dict(), osp.join(args.output_dir, f'target_C_{args.seed}.pt'))
@@ -392,7 +359,7 @@ if __name__ == "__main__":
     parser.add_argument('--epsilon2', type=float, default=1e-6)
     parser.add_argument('--output', type=str, default='output')
     parser.add_argument('--output_src', type=str, default='output')
-    parser.add_argument('--datadir', type=str, default='G:\datasets\office-home/')
+    parser.add_argument('--datadir', type=str, default='datadir')
 
 
     args = parser.parse_args()
@@ -415,10 +382,8 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
     SEED = args.seed
     
-    ############# If you want to obtain the stochastic result, comment following lines. #############
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
-    # torch.cuda.manual_seed_all(SEED) # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     np.random.seed(SEED)
@@ -443,10 +408,6 @@ if __name__ == "__main__":
 
     os.makedirs(args.output_dir_src, exist_ok=True)
     os.makedirs(args.output_dir, exist_ok=True)
-
-    args.prefix = '{}_alpha{}_lr{}_epoch{}_interval{}_seed{}_warm{}'.format(
-        "OT", 0.2, args.lr, args.max_epoch, args.interval, args.seed, 0.0
-    )
 
     ckpt_path = osp.join(args.output_dir, f'target_F_{args.seed}.pt')
     log_path = osp.join(args.output_dir, f'log{random.randint(100000, 999999)}.txt')

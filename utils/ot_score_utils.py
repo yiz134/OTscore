@@ -1,7 +1,5 @@
 import torch
-import numpy as np
 from tqdm import tqdm
-from torch import linalg as LA
 
 class OT_SCORE:
     def __init__(self, src_samples, src_labels, tar_samples, tar_labels, p=1):
@@ -31,7 +29,6 @@ class OT_SCORE:
 
 
     def compute_semi_discrete_OT(self, lr=None, max_iter=2000, batch_size=2000, epsilon=0.5):
-        #self.reweight()
         self.tar_samples = self.tar_samples.to('cuda')
         if lr is None:
             lr_0 = 1.0
@@ -42,11 +39,10 @@ class OT_SCORE:
             lr = lambda i: step_size
         for i in range(max_iter):
             tar_batch = self.tar_samples[torch.randperm(len(self.tar_samples))[:batch_size]]
-            weighted_dist = (-torch.cdist(tar_batch, self.src_samples,
-                                          p=2).T + self.reweight_factors)  # size = num of discrete points * B
+            weighted_dist = (-torch.cdist(tar_batch, self.src_samples, p=2).T + self.reweight_factors)
             weighted_dist = weighted_dist / epsilon
             weighted_dist = weighted_dist - weighted_dist.max(dim=0, keepdim=True).values
-            kai = torch.exp(weighted_dist)  # size = num of discrete points * B
+            kai = torch.exp(weighted_dist)
             kai_normalized = kai / (kai.sum(dim=0, keepdim=True) + 1e-10)
             increment = lr(i) * (- torch.mean(kai_normalized, 1) + self.src_weights)
             self.reweight_factors.data = self.reweight_factors.data + increment.unsqueeze(1)
@@ -80,7 +76,7 @@ class OT_SCORE:
                 reweight_factors_cls = self.reweight_factors[mask]
                 d_xz = torch.cdist(target_batch_cls, src_samples_cls) - reweight_factors_cls.T
                 min_dxz, _ = torch.min(d_xz, dim=1)
-                ot_score[tar_mask, cls_mu] = (min_dxz - min_dxy)#.unsqueeze(1)
+                ot_score[tar_mask, cls_mu] = (min_dxz - min_dxy)
         ot_score, _ = torch.min(ot_score, dim=1)
         self.tar_samples = self.tar_samples.to('cpu')
         return ot_score
@@ -90,38 +86,17 @@ class OT_SCORE:
         return samples[mask], mask
 
 @torch.no_grad()
-def compute_cls_mean_features(model, dataloader):
-    model.eval()
-
-    # Run inference
-    features, gt_labels, pred_labels = [], [], []
-    iterator = tqdm(dataloader)
-    for _ , imgs, labels, idxs in iterator:
-        imgs = imgs.to("cuda")
-
-        feats, logits_cls = model(imgs, return_feats=True) #feats size B*D, logits_cls size B*C
-        pred = logits_cls.argmax(dim=1) #size B
-        features.append(feats)
-        pred_labels.append(pred)
-    
-    cls_mean_features, cls_labels = compute_cls_mean_from_lists(features, pred_labels)
-    return cls_mean_features, cls_labels
-
-
-@torch.no_grad()
 def compute_cls_mean_features_BFC(netB, netF, netC, dataloader, ratio=None):
     netB.eval()
     netF.eval()
     netC.eval()
 
-    # Run inference
     features, gt_labels, pred_labels = [], [], []
 
     for imgs, labels, idxs in tqdm(dataloader):
-        imgs = imgs.to("cuda") #
+        imgs = imgs.to("cuda")
         feats = netB(netF(imgs))
         logits_cls = netC(feats)
-        #feats, logits_cls = model(imgs, return_feats=True)  # feats size B*D, logits_cls size B*C
         pred = logits_cls.argmax(dim=1)  # size B
         features.append(feats)
         pred_labels.append(pred)
@@ -150,7 +125,7 @@ def compute_cls_mean_features_BFC(netB, netF, netC, dataloader, ratio=None):
             features = [all_features[selected_indices]]
             gt_labels = [all_gt_labels[selected_indices]]
             pred_labels = [all_pred_labels[selected_indices]]
-    # Source prototypes are aggregated by GT labels for better class coverage.
+
     cls_mean_features, cls_labels = compute_cls_mean_from_lists(features, gt_labels)
     return cls_mean_features, cls_labels
 
@@ -175,76 +150,26 @@ def compute_cls_mean_from_lists(features, pred_labels):
     return cls_mean_features, cls_labels
 
 @torch.no_grad()
-def extract_features(model, dataloader):
-    model.eval()
-
-    # Run inference
-    features, indices, pred_labels = [], [], []
-    iterator = tqdm(dataloader)
-    for _, imgs, labels, idxs in iterator:
-        imgs = imgs.to("cuda")
-
-        feats, logits_cls = model(imgs, return_feats=True)  # feats size B*D, logits_cls size B*C
-        pred = logits_cls.argmax(dim=1)
-        features.append(feats.cpu())
-        indices.append(idxs)
-        pred_labels.append(pred)
-
-    features = torch.cat(features, dim=0)  # [N, D]
-    indices = torch.cat(indices, dim=0)  # [N]
-    pred_labels = torch.cat(pred_labels, dim=0)  # [N]
-    sorted_idx = torch.argsort(indices)
-    features = features[sorted_idx]
-    pred_labels = pred_labels[sorted_idx]
-    # indices = indices[sorted_idx]
-    return features, pred_labels
-
-@torch.no_grad()
 def extract_features_BFC(netB, netF, netC, dataloader):
     netB.eval()
     netF.eval()
     netC.eval()
 
-    # Run inference
     features, indices, pred_labels = [], [], []
     iterator = tqdm(dataloader)
     for imgs, labels, idxs in iterator:
         imgs = imgs.to("cuda")
         feats = netB(netF(imgs))
         logits_cls = netC(feats)
-        #feats, logits_cls = model(imgs, return_feats=True)  # feats size B*D, logits_cls size B*C
         pred = logits_cls.argmax(dim=1)
         features.append(feats.cpu())
         indices.append(idxs)
         pred_labels.append(pred)
 
-    features = torch.cat(features, dim=0)  # [N, D]
-    indices = torch.cat(indices, dim=0)  # [N]
-    pred_labels = torch.cat(pred_labels, dim=0)  # [N]
+    features = torch.cat(features, dim=0)
+    indices = torch.cat(indices, dim=0)
+    pred_labels = torch.cat(pred_labels, dim=0)
     sorted_idx = torch.argsort(indices)
     features = features[sorted_idx]
     pred_labels = pred_labels[sorted_idx]
-    # indices = indices[sorted_idx]
     return features, pred_labels
-
-import matplotlib.pyplot as plt
-from pathlib import Path
-def plot_conf_score(score, args, normalize=False):
-    score_cpu = score.to('cpu')
-    if normalize:
-        min_score = score_cpu.min()
-        max_score = score_cpu.max()
-        score_cpu = (score_cpu - min_score) / (max_score - min_score)
-
-    # plot
-    fig, ax = plt.subplots()
-    ax.hist(score_cpu.numpy(), bins=50)
-    ax.set_xlabel("Score")
-    ax.set_ylabel("Count")
-    ax.set_title("Score Histogram: mean={:.2f}".format(score_cpu.mean().item()))
-    fig.tight_layout()
-    save_name = f"{args.coeff}_{args.names[args.s]}2{args.names[args.t]}_epoch{int(args.current_epoch)}.png"
-    pair_dir = f"{args.names[args.s]}2{args.names[args.t]}"
-    save_path = Path("plots") / str(args.coeff) / pair_dir / save_name
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(save_path, dpi=200, bbox_inches="tight")

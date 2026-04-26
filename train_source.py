@@ -50,8 +50,7 @@ def image_test(resize_size=256, crop_size=224):
         normalize
     ])
 
-def data_load(args): 
-    ## prepare data
+def data_load(args):
     dsets = {}
     dset_loaders = {}
     train_bs = args.batch_size
@@ -106,7 +105,6 @@ def cal_acc(loader, netF, netB, netC, flag=False):
 
 def train_source(args):
     dset_loaders = data_load(args)
-    ## set base network
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net).cuda()
     elif args.net[0:3] == 'vgg':
@@ -136,7 +134,6 @@ def train_source(args):
     netC.train()
     iter_source = iter(dset_loaders["source_tr"])
     for iter_num in tqdm(range(0, max_iter)):
-    #while iter_num < max_iter:
         try:
             inputs_source, labels_source = next(iter_source)
         except:
@@ -189,7 +186,6 @@ def train_source(args):
 
 def test_target(args):
     dset_loaders = data_load(args)
-    ## set base network
     if args.net[0:3] == 'res':
         netF = network.ResBase(res_name=args.net).cuda()
     elif args.net[0:3] == 'vgg':
@@ -234,12 +230,12 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=32, help="batch_size")
     parser.add_argument('--worker', type=int, default=4, help="number of workers")
     parser.add_argument('--dset', type=str, default='office-home', choices=['VISDA-C', 'office-home', 'image_CLEF', 'domainnet'])
-    parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")#1e-2
+    parser.add_argument('--lr', type=float, default=1e-2, help="learning rate")
     parser.add_argument('--net', type=str, default='resnet50', help="vgg16, resnet50, resnet101")
     parser.add_argument('--seed', type=int, default=2020, help="random seed")
     parser.add_argument('--bottleneck', type=int, default=256)
     parser.add_argument('--output', type=str, default='output')
-    parser.add_argument('--datadir', type=str, default='G:\datasets\office-home/')
+    parser.add_argument('--datadir', type=str, default='datadir')
     parser.add_argument('--test_target', action='store_true',
                         help='Run cross-domain test_target evaluation')
     args = parser.parse_args()
@@ -269,46 +265,40 @@ if __name__ == "__main__":
     if args.s == args.t:
         raise ValueError("Source and target must be different (s != t).")
 
-    for args.s in [args.s]:
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
+    seed = args.seed
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    random.seed(seed)
 
-        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu_id
-        SEED = args.seed
+    print("domain=", names[args.s])
+    args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
+    args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
 
-        ############# If you want to obtain the stochastic result, comment following lines. #############
-        torch.manual_seed(SEED)
-        torch.cuda.manual_seed(SEED)
-        # torch.cuda.manual_seed_all(SEED) # if use multi-GPU
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        np.random.seed(SEED)
-        random.seed(SEED)
+    args.output_dir_src = osp.join(args.output, args.dset, names[args.s][0].upper())
+    args.name_src = names[args.s][0].upper()
+    os.makedirs(args.output_dir_src, exist_ok=True)
 
-        print("domain=", names[args.s])
-        args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
-        args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
+    if not osp.exists((args.output_dir_src + '/source_F_{}.pt'.format(args.seed))):
+        args.out_file = open(osp.join(args.output_dir_src, 'log_{}.txt'.format(args.seed)), 'w')
+        args.out_file.write(print_args(args)+'\n')
+        args.out_file.flush()
+        train_source(args)
 
-
-        args.output_dir_src = osp.join(args.output, args.dset, names[args.s][0].upper())
-        args.name_src = names[args.s][0].upper()
-        os.makedirs(args.output_dir_src, exist_ok=True)
-
-        if not osp.exists((args.output_dir_src + '/source_F_{}.pt'.format(args.seed))):
-            args.out_file = open(osp.join(args.output_dir_src, 'log_{}.txt'.format(args.seed)), 'w')
-            args.out_file.write(print_args(args)+'\n')
-            args.out_file.flush()
-            train_source(args)
-
-            if args.test_target:
-                args.out_file = open(osp.join(args.output_dir_src, 'log_test_{}.txt'.format(args.seed)), 'w')
-                args.name = names[args.s][0].upper() + names[args.t][0].upper()
-                args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
-                args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
-                test_target(args)
-        else:
-            if args.test_target:
-                args.out_file = open(osp.join(args.output_dir_src, 'log_test_{}.txt'.format(args.seed)), 'w')
-                args.name = names[args.s][0].upper() + names[args.t][0].upper()
-                args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
-                args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
-                test_target(args)
+        if args.test_target:
+            args.out_file = open(osp.join(args.output_dir_src, 'log_test_{}.txt'.format(args.seed)), 'w')
+            args.name = names[args.s][0].upper() + names[args.t][0].upper()
+            args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
+            args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
+            test_target(args)
+    else:
+        if args.test_target:
+            args.out_file = open(osp.join(args.output_dir_src, 'log_test_{}.txt'.format(args.seed)), 'w')
+            args.name = names[args.s][0].upper() + names[args.t][0].upper()
+            args.s_dset_path = osp.join(args.datadir, names[args.s] + '_list.txt')
+            args.test_dset_path = osp.join(args.datadir, names[args.t] + '_list.txt')
+            test_target(args)
