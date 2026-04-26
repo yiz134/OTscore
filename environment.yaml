@@ -1,0 +1,23 @@
+name: OTscore
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - numpy=1.26.4
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - tqdm
+  - pillow
+  - pyyaml
+  - pytorch=2.4.*
+  - torchvision=0.19.*
+  - torchaudio=2.4.*
+  - pytorch-cuda=11.8
+  - pip:
+      - pot
+
