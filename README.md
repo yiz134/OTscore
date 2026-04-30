@@ -213,10 +213,10 @@ The OT score can be used for:
 If you find this repository useful, please cite our paper:
 
 ```bibtex
-@article{zhang2025otscore,
+@article{zhang2026otscore,
   title={OT Score: An OT based Confidence Score for Prototype-Assisted Source Free Unsupervised Domain Adaptation},
   author={Zhang, Yiming and Liu, Sitong and Cloninger, Alex},
-  journal={arXiv preprint arXiv:2505.11669},
-  year={2025}
+  journal={Transactions on Machine Learning Research},
+  year={2026}
 }
 ```
