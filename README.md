@@ -1,54 +1,112 @@
-# OTscore Project
+# OT Score: Official Implementation
 
-This project contains:
-- `train_source.py`: train source model (`source_F/B/C_<seed>.pt`)
-- `train_target.py`: adapt target model from source checkpoint (`target_F/B/C_<seed>.pt`)
-- `utils/ot_score_utils.py`: OT score and feature/prototype utilities
+Official PyTorch implementation for the paper:
 
-## 1) Environment
+[**OT Score: An OT based Confidence Score for Prototype-Assisted Source Free Unsupervised Domain Adaptation**](https://arxiv.org/abs/2505.11669)
 
-Create environment from `environment.yaml`:
+This repository contains code for source-free unsupervised domain adaptation (SFUDA) with the proposed **OT score**, including source model training, target adaptation, and OT-score-related feature/prototype utilities.
+
+## Overview
+
+The OT score is a confidence score based on semi-discrete optimal transport. It is designed to estimate the reliability of target pseudo-labels in prototype-assisted source-free unsupervised domain adaptation.
+
+This repository provides:
+
+- `train_source.py`: train the source model and save source checkpoints
+- `train_target.py`: adapt the target model from a trained source checkpoint
+- `utils/ot_score_utils.py`: OT score computation and feature/prototype utilities
+
+## Repository Structure
+
+```text
+.
+├── train_source.py
+├── train_target.py
+├── environment.yaml
+├── utils/
+│   └── ot_score_utils.py
+├── output/
+└── README.md
+```
+
+## 1. Environment Setup
+
+Create the conda environment from `environment.yaml`:
 
 ```bash
 conda env create -f environment.yaml
 conda activate OTscore
 ```
 
-If your conda env name is different (for example `DA`), use that env consistently.
-In commands below, replace `/path/to/domainnet/` with your own dataset root directory.
+If you use a different environment name, for example `DA`, activate that environment consistently:
 
-## 2) Data Layout
+```bash
+conda activate DA
+```
 
-Current code assumes `--datadir` contains both:
-- image folders referenced by list files
-- DomainNet list files like:
-  - `clipart_list.txt`
-  - `real_list.txt`
-  - `painting_list.txt`
-  - `sketch_list.txt`
+## 2. Dataset Preparation
 
-Each list file line format:
+This code assumes that `--datadir` contains both:
+
+1. Image folders referenced by the list files
+2. DomainNet list files, such as:
+
+```text
+clipart_list.txt
+real_list.txt
+painting_list.txt
+sketch_list.txt
+```
+
+Each list file should follow the format:
 
 ```text
 relative/or/absolute/image_path label_id
 ```
 
-## 3) Train Source
+For example:
 
-Run one source-target task by indices (`--s`, `--t`) using DomainNet:
-
-```bash
-python train_source.py --dset domainnet --s 0 --t 1 --datadir "/path/to/domainnet/" --output output
+```text
+clipart/airplane/image_0001.jpg 0
+clipart/bicycle/image_0002.jpg 1
 ```
 
-Only train source (do not run `test_target`) by default.  
-To run source-side test after training:
+In the commands below, replace:
 
-```bash
-python train_source.py --dset domainnet --s 0 --t 1 --datadir "/path/to/domainnet/" --output output --test_target
+```text
+/path/to/domainnet/
 ```
 
-Source checkpoints are saved to:
+with your own dataset root directory.
+
+## 3. Train Source Model
+
+To train a source model for one source-target task on DomainNet, run:
+
+```bash
+python train_source.py \
+  --dset domainnet \
+  --s 0 \
+  --t 1 \
+  --datadir "/path/to/domainnet/" \
+  --output output
+```
+
+By default, this only trains the source model and does not run target-side testing.
+
+To additionally run source-side testing after training, use:
+
+```bash
+python train_source.py \
+  --dset domainnet \
+  --s 0 \
+  --t 1 \
+  --datadir "/path/to/domainnet/" \
+  --output output \
+  --test_target
+```
+
+Source checkpoints will be saved to:
 
 ```text
 output/<dset>/<SourceInitial>/
@@ -57,25 +115,108 @@ output/<dset>/<SourceInitial>/
   source_C_<seed>.pt
 ```
 
-## 4) Train Target Adaptation
+For example:
 
-DomainNet example:
-
-```bash
-python train_target.py --dset domainnet --s 0 --t 1 --datadir "/path/to/domainnet/" --output_src output --output output --seed 2020
+```text
+output/domainnet/C/
+  source_F_2026.pt
+  source_B_2026.pt
+  source_C_2026.pt
 ```
 
-Target script loads source checkpoints from:
+## 4. Target Adaptation
+
+After training the source model, run target adaptation with:
+
+```bash
+python train_target.py \
+  --dset domainnet \
+  --s 0 \
+  --t 1 \
+  --datadir "/path/to/domainnet/" \
+  --output_src output \
+  --output output \
+  --seed 2026
+```
+
+The target adaptation script loads source checkpoints from:
 
 ```text
 <output_src>/<dset>/<SourceInitial>/source_*.pt
 ```
 
-Target checkpoints are saved to:
+Target checkpoints will be saved to:
 
 ```text
 <output>/<dset>/<SourceInitial><TargetInitial>/
   target_F_<seed>.pt
   target_B_<seed>.pt
   target_C_<seed>.pt
+```
+
+For example:
+
+```text
+output/domainnet/CR/
+  target_F_2026.pt
+  target_B_2026.pt
+  target_C_2026.pt
+```
+
+## 5. Example Workflow
+
+A typical workflow is:
+
+### Step 1: Train the source model
+
+```bash
+python train_source.py \
+  --dset domainnet \
+  --s 0 \
+  --t 1 \
+  --datadir "/path/to/domainnet/" \
+  --output output \
+  --seed 2026
+```
+
+### Step 2: Adapt the target model
+
+```bash
+python train_target.py \
+  --dset domainnet \
+  --s 0 \
+  --t 1 \
+  --datadir "/path/to/domainnet/" \
+  --output_src output \
+  --output output \
+  --seed 2026
+```
+
+## 6. OT Score Utilities
+
+The OT score and related feature/prototype utilities are implemented in:
+
+```text
+utils/ot_score_utils.py
+```
+
+These utilities are used during target adaptation to compute confidence scores for pseudo-labeled target samples.
+
+The OT score can be used for:
+
+- identifying low-confidence target pseudo-labels
+- reweighting target samples during adaptation
+- providing a label-free proxy for target-domain performance
+
+## 7. Reference
+
+If you find this repository useful, please cite our paper:
+
+```bibtex
+@article{zhang2025otscore,
+  title={OT Score: An OT based Confidence Score for Prototype-Assisted Source Free Unsupervised Domain Adaptation},
+  author={Zhang, Yiming and Liu, Sitong and Cloninger, Alex},
+  journal={arXiv preprint arXiv:2505.11669},
+  year={2025}
+}
 ```
